@@ -18,15 +18,18 @@
 #
 # usage: tests/run.sh dosbox|grdos [path/to/gzip.exe]
 #
-#   dosbox  DOSBox-X, an 8086 (cputype=8086); with mtools, also the
-#           disk-full steps, on a full 360 KB floppy in A:
+#   dosbox  DOSBox-X, an 8086 (cputype=8086), and the disk-full step, on
+#           a full 360 KB floppy in A:, made with mtools. The step is
+#           never skipped: without mtools, or if the floppy cannot be
+#           made, the run fails. NO_DISKFULL=1 leaves it out on purpose.
 #   grdos   GR-DOS (scripts/fetch-grdos) in QEMU: GR-DOS's floppy in A:,
 #           the fixtures on a 1.44 MB floppy in B:, the steps run there
 #
-# Needs gzip and cmp on the host; dosbox-x, or qemu-system-i386, mtools
-# and curl. Environment: DOSBOX (default dosbox-x), TIMEOUT (default 300
-# seconds), GRDOS_IMG (default: fetched by scripts/fetch-grdos), KEEP=1 to
-# keep the work directory.
+# Needs gzip and cmp on the host, and mtools; dosbox-x, or
+# qemu-system-i386 and curl. Environment: DOSBOX (default dosbox-x),
+# TIMEOUT (default 300 seconds), GRDOS_IMG (default: fetched by
+# scripts/fetch-grdos), NO_DISKFULL=1 to leave out the disk-full step,
+# KEEP=1 to keep the work directory.
 
 set -u
 
@@ -41,7 +44,13 @@ export LC_ALL
 
 case $mode in
 dosbox)
-    command -v "$DOSBOX" >/dev/null || { echo "$DOSBOX not found" >&2; exit 2; } ;;
+    command -v "$DOSBOX" >/dev/null || { echo "$DOSBOX not found" >&2; exit 2; }
+    if [ "${NO_DISKFULL:-0}" != 1 ]; then
+        for t in mformat mcopy mdir; do
+            command -v $t >/dev/null ||
+                { echo "$t not found: the disk-full step needs mtools (NO_DISKFULL=1 leaves it out)" >&2; exit 2; }
+        done
+    fi ;;
 grdos)
     for t in qemu-system-i386 mformat mcopy; do
         command -v $t >/dev/null || { echo "$t not found" >&2; exit 2; }
@@ -197,17 +206,23 @@ EOF
 
 # the disk-full steps, under DOSBox-X: a 360 KB floppy holding a file
 # of random bytes and a filler, with 10 KB free; compressing the file in
-# place cannot finish, and must leave it as it was
+# place cannot finish, and must leave it as it was. If the floppy cannot
+# be made, the run fails here rather than going on without the step.
 full=0
-if [ "$mode" = dosbox ] && command -v mformat >/dev/null && command -v mcopy >/dev/null &&
-    command -v mdir >/dev/null; then
+if [ "$mode" = dosbox ] && [ "${NO_DISKFULL:-0}" != 1 ]; then
     head -c 100000 /dev/urandom > "$work/full.bin"
     mformat -C -f 360 -i "$work/fd.img" :: &&
     mcopy -i "$work/fd.img" "$work/full.bin" ::R.BIN &&
     free=$(mdir -i "$work/fd.img" :: | sed -n 's/^ *\([0-9 ]*\) bytes free.*/\1/p' | tr -d ' ') &&
+    [ -n "$free" ] && [ "$free" -gt 10240 ] &&
     head -c $((free - 10240)) /dev/zero > "$work/filler.bin" &&
     mcopy -i "$work/fd.img" "$work/filler.bin" ::FILLER.BIN &&
-    full=1
+    free=$(mdir -i "$work/fd.img" :: | sed -n 's/^ *\([0-9 ]*\) bytes free.*/\1/p' | tr -d ' ') &&
+    [ "$free" = 10240 ] && full=1
+    if [ "$full" != 1 ]; then
+        echo "FAIL: could not make the full floppy for the disk-full step (work directory: $work)" >&2
+        exit 1
+    fi
     cat >> RUN.BAT <<'EOF'
 imgmount a ..\fd.img -t floppy >nul
 GZIP A:\R.BIN
@@ -395,7 +410,7 @@ if [ "$full" = 1 ]; then
         not_ok "step 32: files left on the full disk"; tr -d '\r' < ADIR.TXT | sed 's/^/    /'
     fi
 elif [ "$mode" = dosbox ]; then
-    echo "skipped: disk-full step (no mtools)"
+    echo "left out: the disk-full step (NO_DISKFULL=1)"
 fi
 
 if [ "$mode" = grdos ] && [ -f MEM.OUT ]; then

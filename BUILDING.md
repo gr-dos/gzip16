@@ -6,7 +6,7 @@ gzip16 compiles nothing. `gzip.exe` is GNU gzip 1.2.4's 16-bit MS-DOS program, `
 
 - `make`, a POSIX shell, `curl`, `sha256sum`, `awk`, GNU `tar` and `git`;
 - `7z`, to unpack the LHA archive (7-Zip, or p7zip's `7z`; `apt-get install p7zip-full`);
-- for the tests: `gzip` and `cmp`, DOSBox-X, `mtools`, and QEMU (`qemu-system-i386`) for the GR-DOS tests.
+- for the tests: `gzip` and `cmp`, DOSBox-X, `mtools`, and QEMU (`qemu-system-i386`) for the GR-DOS tests. `make test` fails without `mtools`, which its disk-full step needs; `make test NO_DISKFULL=1` leaves that step out on purpose.
 
 On Ubuntu 24.04, as CI uses: `sudo apt-get install p7zip-full dosbox-x qemu-system-x86 mtools`.
 

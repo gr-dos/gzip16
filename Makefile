@@ -5,7 +5,8 @@
 #   make              fetch gzip-1.2.4.msdos.exe from the GNU archive
 #                     (scripts/fetch-upstream), unpack it on the host
 #                     (scripts/extract), and copy its GZIP.EXE to gzip.exe
-#   make test         run the tests (tests/run.sh) under DOSBox-X, on an 8086
+#   make test         run the tests (tests/run.sh) under DOSBox-X, on an 8086,
+#                     with the disk-full step (NO_DISKFULL=1 leaves it out)
 #   make test-grdos   run them on GR-DOS, in QEMU
 #   make source       fetch gzip-1.2.4.tar.gz, GNU gzip 1.2.4's source
 

@@ -1,0 +1,49 @@
+#!/bin/sh
+#
+# Fetch a file of GNU gzip 1.2.4 from the GNU archive into DIR, checking
+# its SHA-256 against upstream/SHA256SUMS, and print its path. NAME is one
+# of the files listed there:
+#
+#   gzip-1.2.4.msdos.exe   GNU's MS-DOS binary distribution (an LHA
+#                          self-extracting archive; scripts/extract)
+#   gzip-1.2.4.tar.gz      GNU gzip 1.2.4's source
+#
+# A file already in DIR with that checksum is reused. So is one in
+# upstream/, where a release's source archive carries both
+# (scripts/release-files), so that a tree unpacked from it builds
+# without a download.
+#
+# usage: scripts/fetch-upstream NAME [DIR]     (default DIR: build/upstream)
+#
+# GNU_MIRROR, if set, is used instead of https://ftp.gnu.org/gnu (it must
+# serve the same bytes). GZIP16_OFFLINE=1 fails instead of downloading.
+
+set -eu
+
+[ $# -ge 1 ] && [ $# -le 2 ] || { echo "usage: $0 NAME [DIR]" >&2; exit 2; }
+name=$1
+top=$(cd "$(dirname "$0")/.." && pwd)
+dir=${2:-$top/build/upstream}
+mirror=${GNU_MIRROR:-https://ftp.gnu.org/gnu}
+die() { echo "$0: $*" >&2; exit 1; }
+
+sha=$(awk -v n="$name" '$2 == n { print $1 }' "$top/upstream/SHA256SUMS")
+[ -n "$sha" ] || die "$name is not in upstream/SHA256SUMS"
+file=$dir/$name
+
+good() { [ -f "$1" ] && echo "$sha  $1" | sha256sum -c --status; }
+
+if ! good "$file"; then
+    mkdir -p "$dir"
+    rm -f "$file"
+    if good "$top/upstream/$name"; then
+        cp "$top/upstream/$name" "$file.tmp"
+    else
+        [ "${GZIP16_OFFLINE:-0}" != 1 ] || die "$name is not here, and GZIP16_OFFLINE=1"
+        curl -fsSL -o "$file.tmp" "$mirror/gzip/$name"
+    fi
+    echo "$sha  $file.tmp" | sha256sum -c --quiet ||
+        { rm -f "$file.tmp"; die "$name does not have the SHA-256 upstream/SHA256SUMS pins"; }
+    mv "$file.tmp" "$file"
+fi
+echo "$file"

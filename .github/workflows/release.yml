@@ -1,0 +1,72 @@
+name: release
+
+# main only changes by merging a PR, so a push to main is a merge.
+# If VERSION names a version without a tag, tag the merge commit and
+# publish a release with gzip.exe (the DOS command GZIP, GNU gzip 1.2.4's
+# MS-DOS program), its source and its license attached (BUILDING.md).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check version
+        id: version
+        run: |
+          version=$(cat VERSION)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            echo "v$version is already released"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "releasing v$version"
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install 7-Zip, DOSBox-X, QEMU and mtools
+        if: steps.version.outputs.new == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full dosbox-x qemu-system-x86 mtools
+
+      - name: Build and test
+        if: steps.version.outputs.new == 'true'
+        run: |
+          make
+          make test
+          make test-grdos
+
+      # The source archive (the tree, with GNU's gzip-1.2.4.tar.gz and
+      # gzip-1.2.4.msdos.exe unchanged in upstream/), the license, and a
+      # description; then gzip.exe made again from the archive alone, the same.
+      - name: Release files
+        if: steps.version.outputs.new == 'true'
+        run: |
+          scripts/release-files build/release
+          scripts/check-source build/release/gzip16-$(cat VERSION)-src.tar.gz
+
+      - name: Create release
+        if: steps.version.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" gzip.exe \
+            "build/release/gzip16-$VERSION-src.tar.gz" \
+            build/release/GPL-2.0.txt \
+            --target "$GITHUB_SHA" \
+            --title "v$VERSION" \
+            --notes-file build/release/notes.md \
+            --generate-notes

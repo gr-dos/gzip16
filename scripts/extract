@@ -1,0 +1,53 @@
+#!/bin/sh
+#
+# Unpack GNU's MS-DOS distribution of gzip 1.2.4, gzip-1.2.4.msdos.exe,
+# into DIR, on the host, and check every file in it against
+# upstream/msdos.sha256.
+#
+# The distribution is an LHA (-lh5-) archive behind a DOS self-extractor
+# ("LHA's SFX 2.11S"). The self-extractor is never run: 7-Zip reads the
+# archive after it. The archive must hold exactly the files
+# upstream/msdos.sha256 lists, each with its SHA-256, so a changed
+# upstream archive fails here, and GZIP.EXE, the 16-bit real-mode
+# program, can never be confused with GZIP386.EXE, the 32-bit one (which
+# needs a 386 and has DJGPP's DOS extender built in).
+#
+# usage: scripts/extract ARCHIVE DIR
+#
+# Needs 7z (7-Zip, or p7zip's 7z).
+
+set -eu
+
+[ $# -eq 2 ] || { echo "usage: $0 ARCHIVE DIR" >&2; exit 2; }
+archive=$1 dir=$2
+top=$(cd "$(dirname "$0")/.." && pwd)
+sums=$top/upstream/msdos.sha256
+die() { echo "$0: $*" >&2; exit 1; }
+
+command -v 7z >/dev/null || die "7z not found (7-Zip; on Ubuntu, apt-get install p7zip-full)"
+
+rm -rf "$dir.tmp"
+mkdir -p "$dir.tmp"
+7z x -y -bd -o"$dir.tmp" "$archive" >"$dir.tmp.log" 2>&1 ||
+    { cat "$dir.tmp.log" >&2; rm -rf "$dir.tmp" "$dir.tmp.log"; die "7z could not unpack $archive"; }
+rm -f "$dir.tmp.log"
+
+# the same files, no more and no fewer, each with its pinned SHA-256
+got=$(cd "$dir.tmp" && find . -type f | sed 's|^\./||' | LC_ALL=C sort)
+want=$(awk '{ print $2 }' "$sums" | LC_ALL=C sort)
+[ "$got" = "$want" ] ||
+    { rm -rf "$dir.tmp"; die "the archive's files are not the ones upstream/msdos.sha256 lists: $(echo $got)"; }
+(cd "$dir.tmp" && sha256sum -c --quiet "$sums") ||
+    { rm -rf "$dir.tmp"; die "a file of the archive does not have its pinned SHA-256"; }
+
+# GZIP.EXE is a real-mode MZ program (packed with LZEXE 0.91), not the
+# DJGPP a.out-in-MZ that GZIP386.EXE is, with go32's DPMI messages
+[ "$(head -c 2 "$dir.tmp/GZIP.EXE")" = MZ ] || { rm -rf "$dir.tmp"; die "GZIP.EXE is not an MZ executable"; }
+[ "$(dd if="$dir.tmp/GZIP.EXE" bs=1 skip=28 count=4 2>/dev/null)" = LZ91 ] ||
+    { rm -rf "$dir.tmp"; die "GZIP.EXE is not the LZEXE-packed 16-bit program"; }
+if grep -aq 'DPMI: ' "$dir.tmp/GZIP.EXE"; then
+    rm -rf "$dir.tmp"; die "GZIP.EXE has DJGPP's DOS extender in it"
+fi
+
+rm -rf "$dir"
+mv "$dir.tmp" "$dir"

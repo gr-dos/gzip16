@@ -1,0 +1,8 @@
+# gzip16's corresponding source, for GR-DOS's dist16 (gr-dos/gr-dos,
+# docs/dist16.md). scripts/release-files checks that it names this
+# VERSION, so change it with VERSION. gzip.exe is GNU's own MS-DOS
+# program, linked with no library of ours, so there is no depends.
+license GPL-2.0-or-later
+source gzip16-0.01-src.tar.gz
+build BUILDING.md
+notice NOTICE

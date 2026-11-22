@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      # make fetches GNU's MS-DOS distribution of gzip 1.2.4 from the GNU
+      # archive (upstream/SHA256SUMS) and unpacks it with 7z; the tests
+      # need DOSBox-X, and mtools and QEMU for the disk-full step and GR-DOS.
+      - name: Install 7-Zip, DOSBox-X, QEMU and mtools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full dosbox-x qemu-system-x86 mtools
+
+      - name: Build
+        run: make
+
+      - name: Test
+        run: make test
+
+      # The same steps on GR-DOS (scripts/fetch-grdos), in QEMU.
+      - name: Test on GR-DOS
+        run: make test-grdos
+
+      # As release.yml makes them; build/release is not published here.
+      - name: Release files
+        run: |
+          scripts/release-files build/release
+          scripts/check-source build/release/gzip16-$(cat VERSION)-src.tar.gz
+          cat build/release/notes.md

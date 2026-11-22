@@ -1,0 +1,26 @@
+gzip16: GNU gzip 1.2.4 for 16-bit MS-DOS (GZIP.EXE)
+
+GNU gzip 1.2.4:
+  Copyright (C) 1992-1993 Jean-loup Gailly
+  The unzip code was written and put in the public domain by Mark Adler.
+  Portions of the lzw code are derived from the public domain 'compress'
+  written by Spencer Thomas, Joe Orost, James Woods, Jim McKie, Steve
+  Davies, Ken Turkowski, Dave Mack and Peter Jannesen.
+  (gzip.c in gzip-1.2.4.tar.gz.)
+
+gzip.exe is GZIP.EXE from GNU's MS-DOS distribution of gzip 1.2.4,
+gzip-1.2.4.msdos.exe (https://ftp.gnu.org/gnu/gzip/), built by its
+author in 1993 and packed with LZEXE 0.91. gzip16 does not change it: it
+fetches it, checks it against the SHA-256 checksums in upstream/, and
+tests it. It is not GR-DOS's or libc16's code. Its source is GNU gzip
+1.2.4's, gzip-1.2.4.tar.gz, which each release's source archive carries
+unchanged in upstream/ (BUILDING.md).
+
+gzip is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 2, or (at your option) any later
+version. It is distributed WITHOUT ANY WARRANTY; see COPYING, the GNU
+General Public License version 2, for details.
+
+gzip16's own files (the Makefile, scripts/, tests/ and docs/) are
+distributed under the same terms.

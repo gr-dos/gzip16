@@ -1,0 +1,139 @@
+#!/bin/sh
+#
+# Make the files a gzip16 release carries beside gzip.exe, in DIR:
+#
+#   gzip16-V-src.tar.gz   gzip.exe's corresponding source, which
+#                         dist16.source names for GR-DOS's dist16: the
+#                         tree at the commit being released (git archive
+#                         of HEAD) and, in its upstream/, GNU's two files,
+#                         unchanged: gzip-1.2.4.tar.gz, GNU gzip 1.2.4's
+#                         source, and gzip-1.2.4.msdos.exe, the MS-DOS
+#                         distribution gzip.exe is taken from
+#   GPL-2.0.txt           gzip's license (COPYING, GNU gzip 1.2.4's)
+#   notes.md              what the release is, where its source is, the
+#                         licenses and the checksums, for the release
+#                         description
+#
+# Run after make, in a checkout with nothing changed, so that the archive
+# is the source of the gzip.exe beside it. scripts/check-source then makes
+# gzip.exe again from the archive alone, and compares the two.
+#
+# usage: scripts/release-files DIR          (gzip16's version is VERSION)
+
+set -eu
+
+[ $# -eq 1 ] || { echo "usage: $0 DIR" >&2; exit 2; }
+dir=$1
+top=$(cd "$(dirname "$0")/.." && pwd)
+version=$(cat "$top/VERSION")
+die() { echo "$0: $*" >&2; exit 1; }
+
+# the program, as make takes it from the pinned distribution
+[ -f "$top/gzip.exe" ] || die "no gzip.exe; run make"
+[ "$(head -c 2 "$top/gzip.exe")" = MZ ] || die "gzip.exe is not an MZ executable"
+exesha=$(awk '$2 == "GZIP.EXE" { print $1 }' "$top/upstream/msdos.sha256")
+echo "$exesha  $top/gzip.exe" | sha256sum -c --status ||
+    die "gzip.exe is not the GZIP.EXE upstream/msdos.sha256 pins"
+if grep -aq 'WATCOM C/C++ Run Time' "$top/gzip.exe"; then
+    die "gzip.exe has Open Watcom's C runtime banner"
+fi
+
+# the source is HEAD's, so the tree must be HEAD's
+[ -z "$(git -C "$top" status --porcelain --untracked-files=no)" ] ||
+    die "the checkout has changes; the source archive would not be its source"
+
+# dist16.source names this release's source (gr-dos/gr-dos docs/dist16.md)
+manifest() { sed -n "s/^$1 //p" "$top/dist16.source"; }
+[ "$(manifest license)" = GPL-2.0-or-later ] || die "dist16.source: license is not GPL-2.0-or-later"
+[ "$(manifest source)" = "gzip16-$version-src.tar.gz" ] ||
+    die "dist16.source: source is not gzip16-$version-src.tar.gz"
+[ -z "$(manifest depends)" ] || die "dist16.source: gzip.exe is linked with no library of ours"
+build=$(manifest build)
+notices=$(manifest notice)
+for f in COPYING "$build" $notices; do
+    [ -f "$top/$f" ] || die "dist16.source names $f, which is not there"
+done
+
+# GNU's files, as pinned
+up=$top/build/upstream
+for f in gzip-1.2.4.tar.gz gzip-1.2.4.msdos.exe; do
+    "$top/scripts/fetch-upstream" "$f" "$up" >/dev/null
+done
+
+mkdir -p "$dir"
+dir=$(cd "$dir" && pwd)
+prefix=gzip16-$version
+archive=$dir/$prefix-src.tar.gz
+
+# the tree, then GNU's two files under upstream/, owned by root and dated
+# as the commit, so the archive is the same each time it is made
+head=$(git -C "$top" rev-parse HEAD)
+when=$(git -C "$top" log -1 --format=%ct HEAD)
+git -C "$top" archive --format=tar --prefix="$prefix/" HEAD > "$dir/src.tar"
+tar --append -f "$dir/src.tar" -C "$up" \
+    --transform "s|^|$prefix/upstream/|" \
+    --owner=0 --group=0 --numeric-owner --mode=0644 --mtime="@$when" \
+    gzip-1.2.4.tar.gz gzip-1.2.4.msdos.exe
+gzip -9n < "$dir/src.tar" > "$archive"
+rm -f "$dir/src.tar"
+
+listing=$(tar -tzf "$archive")
+for f in dist16.source COPYING "$build" $notices \
+    upstream/gzip-1.2.4.tar.gz upstream/gzip-1.2.4.msdos.exe; do
+    printf '%s\n' "$listing" | grep -qx "$prefix/$f" || die "the source archive has no $f"
+done
+psha=$(sha256sum "$archive" | cut -d' ' -f1)
+
+cp "$top/COPYING" "$dir/GPL-2.0.txt"
+
+msdos_sha=$(awk '$2 == "gzip-1.2.4.msdos.exe" { print $1 }' "$top/upstream/SHA256SUMS")
+src_sha=$(awk '$2 == "gzip-1.2.4.tar.gz" { print $1 }' "$top/upstream/SHA256SUMS")
+
+cat > "$dir/notes.md" <<EOF
+gzip16 $version is GNU gzip 1.2.4 for 16-bit MS-DOS: \`gzip.exe\`, the DOS
+command \`GZIP\`, for an 8088 or later. It is GNU's own MS-DOS program of
+1993, unchanged: \`GZIP.EXE\` from GNU's MS-DOS distribution,
+[\`gzip-1.2.4.msdos.exe\`](https://ftp.gnu.org/gnu/gzip/gzip-1.2.4.msdos.exe).
+It is not GR-DOS's or libc16's code. \`docs/DOS.md\` is its manual.
+
+### Source
+
+\`gzip16-$version-src.tar.gz\`, attached, is the source of this release:
+the tree at tag \`v$version\` (commit \`$head\`), and in its \`upstream/\`,
+GNU's files, unchanged:
+
+- \`gzip-1.2.4.tar.gz\`, GNU gzip 1.2.4's source, with the MS-DOS
+  makefiles GNU's program was built with (\`msdos/\`), also at
+  <https://ftp.gnu.org/gnu/gzip/gzip-1.2.4.tar.gz>;
+- \`gzip-1.2.4.msdos.exe\`, the MS-DOS distribution \`gzip.exe\` is taken
+  from.
+
+\`dist16.source\` names it for GR-DOS.
+
+### Building
+
+Nothing is compiled (\`BUILDING.md\`). \`make\` fetches
+\`gzip-1.2.4.msdos.exe\` from the GNU archive, checks its SHA-256, unpacks
+it on the host with 7-Zip (its DOS self-extractor is never run), checks
+every file in it against \`upstream/msdos.sha256\`, and copies its
+16-bit \`GZIP.EXE\` to \`gzip.exe\`. \`make test\` runs the tests under
+DOSBox-X on an 8086, and \`make test-grdos\` on GR-DOS in QEMU. Before
+this release was made, \`scripts/check-source\` made \`gzip.exe\` again
+from \`gzip16-$version-src.tar.gz\` alone, with no download, and found it
+the same, byte for byte.
+
+### License
+
+GNU gzip 1.2.4, Copyright (C) 1992-1993 Jean-loup Gailly: GPL version 2
+or any later version, \`GPL-2.0.txt\` (\`COPYING\` in the source).
+\`NOTICE\` has the authors.
+
+### Checksums (SHA-256)
+
+\`\`\`
+$psha  gzip16-$version-src.tar.gz
+$msdos_sha  gzip-1.2.4.msdos.exe
+$src_sha  gzip-1.2.4.tar.gz
+$(cd "$top" && sha256sum gzip.exe)
+\`\`\`
+EOF
